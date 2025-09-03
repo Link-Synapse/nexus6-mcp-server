@@ -1,57 +1,114 @@
 // server/server.js
-import fs from 'node:fs';
-import path from 'node:path';
-import http from 'node:http';
-import express from 'express';
-import cors from 'cors';
-import dotenv from 'dotenv';
+require("dotenv").config();
 
-dotenv.config();
+const fs = require("fs");
+const path = require("path");
+const express = require("express");
+const cors = require("cors");
 
-const UI_PORT = process.env.UI_PORT||3002;
-const DATA_DIR = path.resolve('./');
-const LOGS_DIR = path.join(DATA_DIR,'logs');
-const A2A_LOG = path.join(LOGS_DIR,'a2a.ndjson');
-const UI_DIR = path.join(DATA_DIR,'ui');
+const bearerAuth = require("./middleware/auth");
+const chatRoute = require("./routes/chat");
+const modelsRoute = require("./routes/models"); // NEW
 
-fs.mkdirSync(LOGS_DIR,{recursive:true});
-if(!fs.existsSync(A2A_LOG)) fs.writeFileSync(A2A_LOG,'');
+const app = express();
+const API_PORT = Number(process.env.API_PORT || 3002);
+const MCP_PORT = Number(process.env.MCP_PORT || 3001); // reserved for Phase 2 MCP WS
 
-const OPENAI_MODELS=new Set(['gpt-4o','gpt-4o-mini']);
-const ANTHROPIC_MODELS=new Set(['claude-3-5-sonnet-latest','claude-3-5-haiku-latest','claude-3-opus-20240229']);
-
-const app=express();
 app.use(cors());
-app.use(express.json());
-app.use('/ui',express.static(UI_DIR,{extensions:['html']}));
+app.use(express.json({ limit: "1mb" }));
 
-// SSE
-const sseClients=new Set();
-app.get('/api/a2a/feed',(req,res)=>{
-  res.writeHead(200,{'Content-Type':'text/event-stream','Cache-Control':'no-cache','Connection':'keep-alive'});
-  const client={res};sseClients.add(client);
-  req.on('close',()=>sseClients.delete(client));
+// Ensure logs dir exists
+const logsDir = path.join(__dirname, "..", "logs");
+if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+
+// === Health (no auth) ===
+app.get("/health", (_req, res) => res.json({ ok: true, ver: "v1.1.3" }));
+
+// === Bearer auth for /api/* (UI + /health remain public) ===
+app.use(bearerAuth);
+
+// === A2A SSE FEED (left public in dev via middleware exemption) ===
+const sseClients = new Set();
+
+app.get("/api/a2a/feed", (req, res) => {
+  res.writeHead(200, {
+    "Content-Type": "text/event-stream",
+    "Cache-Control": "no-cache, no-transform",
+    Connection: "keep-alive",
+    "X-Accel-Buffering": "no",
+  });
+
+  res.write(`event: hello\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+  sseClients.add(res);
+
+  const interval = setInterval(() => {
+    try {
+      res.write(`event: ping\ndata: ${JSON.stringify({ ts: Date.now() })}\n\n`);
+    } catch {
+      // client likely closed
+    }
+  }, 20000);
+
+  req.on("close", () => {
+    clearInterval(interval);
+    sseClients.delete(res);
+  });
 });
-function broadcast(event,payload){const data=`event: ${event}\ndata: ${JSON.stringify(payload)}\n\n`;for(const c of sseClients){try{c.res.write(data);}catch{}}}
-function appendA2ALog(obj){fs.appendFile(A2A_LOG,JSON.stringify(obj)+'\n',()=>{});}
-function rid(){return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,8);}
 
-app.post('/api/chatgpt/send',async(req,res)=>{
-  const {from,body,model}=req.body||{};
-  if(!from||!body) return res.status(400).json({ok:false});
-  let useModel=process.env.OPENAI_MODEL||'gpt-4o-mini';
-  if(model&&OPENAI_MODELS.has(model)) useModel=model;
-  const msg={id:rid(),ts:Date.now(),from:'ChatGPT',to:from,body:`[stub reply from ${useModel}]`};
-  appendA2ALog(msg);broadcast('a2a.message',msg);res.json({ok:true,id:msg.id,ts:msg.ts});
+// Broadcast helper for A2A
+function broadcastA2A(evt, payload) {
+  for (const client of sseClients) {
+    try {
+      client.write(`event: ${evt}\ndata: ${JSON.stringify(payload)}\n\n`);
+    } catch {
+      // ignore broken pipes
+    }
+  }
+}
+
+// === A2A MESSAGE INGEST (requires bearer via /api/*) ===
+app.post("/api/a2a/message", (req, res) => {
+  const { from, to, project, subject, body, correlationId } = req.body || {};
+  if (!from || !to || !project || !body) {
+    return res.status(400).json({ error: "missing_fields", required: ["from", "to", "project", "body"] });
+  }
+  const msg = {
+    id: `a2a_${Date.now()}_${Math.random().toString(16).slice(2, 8)}`,
+    ts: new Date().toISOString(),
+    from,
+    to,
+    project,
+    subject: subject || null,
+    body,
+    correlationId: correlationId || null,
+  };
+
+  const logPath = path.join(logsDir, "a2a.ndjson");
+  fs.appendFileSync(logPath, JSON.stringify(msg) + "\n", "utf8");
+
+  broadcastA2A("message", msg);
+
+  return res.json({ ok: true, id: msg.id });
 });
 
-app.post('/api/claude/send',async(req,res)=>{
-  const {from,body,model}=req.body||{};
-  if(!from||!body) return res.status(400).json({ok:false});
-  let useModel=process.env.ANTHROPIC_MODEL||'claude-3-5-sonnet-latest';
-  if(model&&ANTHROPIC_MODELS.has(model)) useModel=model;
-  const msg={id:rid(),ts:Date.now(),from:'Claude',to:from,body:`[stub reply from ${useModel}]`};
-  appendA2ALog(msg);broadcast('a2a.message',msg);res.json({ok:true,id:msg.id,ts:msg.ts});
+// === LLM Chat Route ===
+app.use("/api/chat", chatRoute);
+
+// === Models route (so UI can fetch valid models) ===
+app.use("/api/models", modelsRoute);
+
+// === Static UI (no auth) ===
+app.use("/ui", express.static(path.join(__dirname, "..", "ui")));
+
+// === Root ===
+app.get("/", (_req, res) => {
+  res.send("Nexus6 MCP Server is running. See /ui for UI.");
 });
 
-http.createServer(app).listen(UI_PORT,()=>console.log('Listening on',UI_PORT));
+// === Start API/UI server ===
+app.listen(API_PORT, () => {
+  console.log(`API/UI listening on http://localhost:${API_PORT}`);
+});
+
+// === MCP WebSocket (Phase 2 placeholder) ===
+// Port reserved; will be implemented in Phase 2 per ROADMAP.md
