@@ -1,137 +1,46 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Nexus6 MCP — A2A Console (v1.1)</title>
-  <style>
-    :root { --bg:#0b0f17; --panel:#121826; --muted:#9aa4b2; --fg:#e5e7eb; --acc:#6ee7b7; --border:#1f2937; }
-    * { box-sizing:border-box; }
-    body { margin:0; font:14px/1.4 system-ui,Segoe UI,Roboto,Ubuntu; background:var(--bg); color:var(--fg); }
-    header { display:flex; gap:12px; align-items:center; padding:16px 20px; border-bottom:1px solid var(--border); background:var(--panel); position:sticky; top:0; z-index:10; }
-    .pill { padding:6px 10px; border:1px solid var(--border); border-radius:999px; color:var(--muted); }
-    .ok { color:var(--acc); }
-    main { max-width:1100px; margin:0 auto; padding:20px; display:grid; grid-template-columns: 1.2fr .8fr; gap:20px; }
-    @media (max-width: 960px) { main { grid-template-columns: 1fr; } }
-    .card { background:var(--panel); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
-    .card h2 { margin:0; padding:12px 16px; border-bottom:1px solid var(--border); font-size:16px; color:#cbd5e1; }
-    .list { height:60vh; overflow:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
-    .msg { border:1px solid var(--border); border-radius:10px; padding:10px 12px; background:#0f1626; }
-    .meta { font-size:12px; color:var(--muted); display:flex; gap:8px; flex-wrap:wrap; }
-    .body { white-space:pre-wrap; margin-top:6px; }
-    form { display:grid; gap:10px; padding:12px; }
-    .row { display:flex; gap:10px; }
-    input, select, textarea, button { background:#0f1626; color:var(--fg); border:1px solid var(--border); border-radius:10px; padding:10px; }
-    textarea { min-height:120px; }
-    button { cursor:pointer; }
-    .muted { color:var(--muted); }
-    .status { padding:8px 12px; font-size:12px; color:var(--muted); }
-  </style>
+  <meta charset="utf-8"/>
+  <title>Nexus6 MCP — A2A Console</title>
 </head>
 <body>
-  <header>
-    <strong>Nexus6 MCP — A2A Console</strong>
-    <span id="health" class="pill">Checking…</span>
-    <span id="feedState" class="pill">Feed: connecting…</span>
-  </header>
-
-  <main>
-    <section class="card" aria-labelledby="feedTitle">
-      <h2 id="feedTitle">Live Feed</h2>
-      <div id="feed" class="list" role="log" aria-live="polite"></div>
-    </section>
-
-    <section class="card" aria-labelledby="composeTitle">
-      <h2 id="composeTitle">Compose Message</h2>
-      <form id="composer">
-        <div class="row">
-          <input id="from" placeholder="From (e.g., Chaz)" required />
-          <select id="to" required>
-            <option value="Axlon">Axlon</option>
-            <option value="Claude">Claude</option>
-            <option value="ChatGPT">ChatGPT</option>
-          </select>
-        </div>
-        <div class="row">
-          <input id="project" placeholder="Project (optional)" />
-          <input id="subject" placeholder="Subject (optional)" />
-        </div>
-        <textarea id="body" placeholder="Type your message…" required></textarea>
-        <div class="row">
-          <button type="submit">Send</button>
-          <span id="status" class="status"></span>
-        </div>
-      </form>
-    </section>
-  </main>
-
+  <h1>A2A Console</h1>
+  <form id="composer">
+    <input id="from" placeholder="From" required/>
+    <select id="to" required>
+      <option value="Axlon">Axlon</option>
+      <option value="Claude">Claude</option>
+      <option value="ChatGPT">ChatGPT</option>
+    </select>
+    <select id="model"></select>
+    <textarea id="body" required></textarea>
+    <button type="submit">Send</button>
+  </form>
+  <div id="feed"></div>
   <script>
-    const $ = (s)=>document.querySelector(s);
-    const feedEl = $('#feed');
-    const statusEl = $('#status');
-    const healthEl = $('#health');
-    const feedStateEl = $('#feedState');
-
-    const fromInput = $('#from');
-    fromInput.value = localStorage.getItem('n6.from') || 'Chaz';
-    fromInput.addEventListener('input', ()=> localStorage.setItem('n6.from', fromInput.value));
-
-    fetch('/api/health').then(r=>r.json()).then(j=>{
-      if (j.ok) { healthEl.textContent = `OK · ${j.version}`; healthEl.classList.add('ok'); }
-      else healthEl.textContent = 'Health: error';
-    }).catch(()=> healthEl.textContent = 'Health: offline');
-
-    function renderMsg(m) {
-      const ts = new Date(m.ts).toLocaleString();
-      const div = document.createElement('div');
-      div.className = 'msg';
-      div.innerHTML = `
-        <div class="meta">${ts} · <strong>${escapeHtml(m.from)}</strong> → <strong>${escapeHtml(m.to)}</strong>${m.project?` · 🗂️ ${escapeHtml(m.project)}`:''}${m.subject?` · ✉️ ${escapeHtml(m.subject)}`:''}</div>
-        <div class="body">${linkify(escapeHtml(m.body))}</div>
-      `;
-      feedEl.appendChild(div);
-      feedEl.scrollTop = feedEl.scrollHeight;
+    const MODEL_OPTIONS = {
+      ChatGPT:[
+        {label:'GPT-4o',value:'gpt-4o'},
+        {label:'GPT-4o Mini',value:'gpt-4o-mini'}
+      ],
+      Claude:[
+        {label:'Claude Sonnet 3.5',value:'claude-3-5-sonnet-latest'},
+        {label:'Claude Haiku 3.5',value:'claude-3-5-haiku-latest'},
+        {label:'Claude Opus 3',value:'claude-3-opus-20240229'}
+      ],
+      Axlon:[]
+    };
+    const toSel=document.getElementById('to');
+    const modelSel=document.getElementById('model');
+    function populateModels(who){
+      modelSel.innerHTML='';
+      (MODEL_OPTIONS[who]||[]).forEach(opt=>{
+        const o=document.createElement('option');o.value=opt.value;o.textContent=opt.label;modelSel.appendChild(o);
+      });
     }
-
-    function escapeHtml(s){return s.replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",""":"&quot;","'":"&#39;"}[c]));}
-    function linkify(s){return s.replace(/(https?:\/\/\S+)/g,'<a target="_blank" href="$1">$1<\/a>');}
-
-    fetch('/api/a2a/messages').then(r=>r.json()).then(j=>{ if (j.ok) j.messages.forEach(renderMsg); }).catch(()=>{});
-
-    let es;
-    function connectFeed(){
-      feedStateEl.textContent = 'Feed: connecting…';
-      es = new EventSource('/api/a2a/feed');
-      es.addEventListener('open', ()=> feedStateEl.textContent = 'Feed: connected');
-      es.addEventListener('error', ()=> feedStateEl.textContent = 'Feed: error');
-      es.addEventListener('a2a.message', ev => { try { renderMsg(JSON.parse(ev.data)); } catch {} });
-    }
-    connectFeed();
-
-    $('#composer').addEventListener('submit', async (e)=>{
-      e.preventDefault();
-      const payload = {
-        from: $('#from').value.trim(),
-        to: $('#to').value,
-        project: $('#project').value.trim() || null,
-        subject: $('#subject').value.trim() || null,
-        body: $('#body').value.trim(),
-      };
-      if (!payload.from || !payload.body) return;
-      statusEl.textContent = 'Sending…';
-      try {
-        let url = '/api/a2a/send';
-        if (payload.to === 'ChatGPT') url = '/api/chatgpt/send';
-        if (payload.to === 'Claude') url = '/api/claude/send';
-        const r = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
-        const j = await r.json();
-        if (!j.ok) throw new Error(j.error||'send failed');
-        statusEl.textContent = `Sent · ${new Date(j.ts).toLocaleTimeString()}`;
-        $('#body').value = '';
-      } catch (err) {
-        statusEl.textContent = 'Error: ' + err.message;
-      }
-    });
+    toSel.addEventListener('change',()=>populateModels(toSel.value));
+    populateModels(toSel.value);
   </script>
 </body>
 </html>

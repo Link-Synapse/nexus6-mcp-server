@@ -1,1 +1,1 @@
-Claude: worker agent SOP (placeholder).
+placeholder
