@@ -1,0 +1,16 @@
+{
+  "projects": [
+    {
+      "slug": "nexus6",
+      "local_dir": "./projects/nexus6"
+    },
+    {
+      "slug": "link_synapse",
+      "local_dir": "./projects/link_synapse"
+    },
+    {
+      "slug": "wp_auto_poster",
+      "local_dir": "./projects/wp_auto_poster"
+    }
+  ]
+}

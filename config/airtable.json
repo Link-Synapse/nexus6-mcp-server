@@ -1,0 +1,8 @@
+{
+  "api_key": "YOUR_AIRTABLE_API_KEY",
+  "base_id": "YOUR_BASE_ID",
+  "tables": {
+    "docs": "Docs",
+    "tasks": "Research_Tasks"
+  }
+}

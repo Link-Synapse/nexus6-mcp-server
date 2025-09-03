@@ -1,0 +1,17 @@
+{
+  "name": "nexus6-mcp-server",
+  "version": "1.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Nexus6 MCP server (Airtable\u2194GitHub adapters, A2A Chat UI, ChatGPT & Claude handlers)",
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js",
+    "check": "node -e \"console.log('OK')\""
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  }
+}

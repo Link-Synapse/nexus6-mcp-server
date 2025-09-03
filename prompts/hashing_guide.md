@@ -1,0 +1,1 @@
+How to compute SHA-256 (placeholder).
