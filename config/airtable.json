@@ -1,8 +1,8 @@
 {
-  "api_key": "YOUR_AIRTABLE_API_KEY",
-  "base_id": "YOUR_BASE_ID",
+  "api_key": "pat3QPYmhrQ3Fhv64.f64a7e4c58a903d7abc73013c5a068feeede07bbb598f2c4959eeaacd2b4349b",
+  "base_id": "appM75fvKM3nYyOaF",
   "tables": {
-    "docs": "Docs",
-    "tasks": "Research_Tasks"
+    "docs_id": "tbloZ8LbITEVCvBbK",
+    "docs": "Docs"
   }
 }
